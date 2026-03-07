@@ -1,0 +1,99 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+
+# TTS Repository (cloned dependency)
+TTS/
+
+# Datasets (large files and potentially copyrighted)
+dataset*/
+*.mp4
+*.webm
+*.mkv
+*.avi
+
+# Training outputs (large model checkpoints)
+finetune_output/
+checkpoints/
+runs/
+logs/
+
+# Generated audio files
+*.wav
+*.mp3
+*.flac
+*.ogg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.spyderproject
+.spyproject
+.ropeproject
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables and secrets
+.env
+.env.local
+*.key
+*.pem
+credentials.json
+secrets.json
+
+# Logs
+*.log
+*.out
+*.err
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*.cache
