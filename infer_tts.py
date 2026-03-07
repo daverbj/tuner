@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 from pathlib import Path
+import sys
 
 import torch
 
@@ -48,16 +49,27 @@ def resolve_device(device: str) -> str:
     return device
 
 
+def ensure_local_tts_on_path() -> None:
+    repo_root = Path(__file__).resolve().parent
+    local_tts_repo = repo_root / "TTS"
+    if local_tts_repo.exists() and local_tts_repo.is_dir():
+        sys.path.insert(0, str(local_tts_repo))
+
+
 def main() -> None:
     args = build_parser().parse_args()
     device = resolve_device(args.device)
 
+    ensure_local_tts_on_path()
+
     try:
         from TTS.api import TTS
     except ModuleNotFoundError as error:
+        missing_name = getattr(error, "name", None)
+        missing_detail = f" Missing module: {missing_name}." if missing_name else ""
         raise SystemExit(
             "Missing dependency while importing Coqui TTS. "
-            "Install project dependencies first, e.g. `pip install -e .`"
+            f"Install project dependencies first, e.g. `pip install -r TTS/requirements.txt`.{missing_detail}"
         ) from error
 
     output_path = Path(args.out_path)

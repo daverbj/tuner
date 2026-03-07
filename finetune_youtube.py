@@ -24,12 +24,15 @@ def _stream_trainer_log_to_stdout(trainer, stop_event, poll_interval=0.5):
                 print(f"Streaming trainer logs from: {log_path}")
                 printed_header = True
 
-            with open(log_path, "r", encoding="utf-8") as log_file:
-                log_file.seek(file_pos)
-                chunk = log_file.read()
-                if chunk:
-                    print(chunk, end="", flush=True)
-                    file_pos = log_file.tell()
+            try:
+                with open(log_path, "r", encoding="utf-8") as log_file:
+                    log_file.seek(file_pos)
+                    chunk = log_file.read()
+                    if chunk:
+                        print(chunk, end="", flush=True)
+                        file_pos = log_file.tell()
+            except FileNotFoundError:
+                pass
 
         time.sleep(poll_interval)
 
@@ -78,6 +81,7 @@ def main():
 
     dataset_path = str(Path(args.dataset_path).expanduser().resolve())
     output_path = str(Path(args.output_path).expanduser().resolve())
+    f0_cache_path = str(Path(output_path) / "f0_cache")
 
     if not Path(dataset_path).exists():
         raise FileNotFoundError(f"Dataset path not found: {dataset_path}")
@@ -121,7 +125,8 @@ def main():
         text_cleaner="english_cleaners",
         use_phonemes=False,
         compute_input_seq_cache=False,
-        compute_f0=False,
+        compute_f0=True,
+        f0_cache_path=f0_cache_path,
         print_step=5,
         print_eval=True,
         save_step=500,
