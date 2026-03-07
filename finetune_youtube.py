@@ -6,6 +6,8 @@ Uses the Silero VAD + Whisper generated dataset.
 
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 
 from trainer import Trainer, TrainerArgs
@@ -16,6 +18,28 @@ from TTS.tts.datasets import load_tts_samples
 from TTS.tts.models.forward_tts import ForwardTTS
 from TTS.tts.utils.text.tokenizer import TTSTokenizer
 from TTS.utils.audio import AudioProcessor
+
+
+def _stream_trainer_log_to_stdout(trainer, stop_event, poll_interval=0.5):
+    """Continuously stream trainer log file to stdout."""
+    log_path = Path(trainer.output_path) / "trainer_0_log.txt"
+    printed_header = False
+    file_pos = 0
+
+    while not stop_event.is_set():
+        if log_path.exists():
+            if not printed_header:
+                print(f"Streaming trainer logs from: {log_path}")
+                printed_header = True
+
+            with open(log_path, "r", encoding="utf-8") as log_file:
+                log_file.seek(file_pos)
+                chunk = log_file.read()
+                if chunk:
+                    print(chunk, end="", flush=True)
+                    file_pos = log_file.tell()
+
+        time.sleep(poll_interval)
 
 
 # Configuration
@@ -131,4 +155,16 @@ trainer = Trainer(
 # Start training
 print("\nStarting training...")
 print("=" * 60)
-trainer.fit()
+stop_log_stream = threading.Event()
+log_thread = threading.Thread(
+    target=_stream_trainer_log_to_stdout,
+    args=(trainer, stop_log_stream),
+    daemon=True,
+)
+log_thread.start()
+
+try:
+    trainer.fit()
+finally:
+    stop_log_stream.set()
+    log_thread.join(timeout=2)
