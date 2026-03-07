@@ -95,6 +95,41 @@ python youtube_dataset_builder.py \
 - `--speech_pad_ms 100` padding around detected speech boundaries.
 - `--compute_type int8` lower memory usage for transcription.
 
+## Finetune FastPitch on your dataset
+
+Prerequisite: create a dataset first (for example `dataset_silero_vad/manifest.csv` and clip WAVs).
+
+### Run finetuning
+
+```bash
+python finetune_youtube.py --dataset_path /path/to/your/dataset
+```
+
+Notes:
+
+- `--dataset_path` is required and must contain `manifest.csv` plus referenced audio files.
+- Optional: set `--meta_file` if your metadata file is not named `manifest.csv`.
+- Optional: set `--output_path` and `--run_name` to control checkpoint/log location.
+- Training logs are streamed live to your terminal.
+- Checkpoints and config are saved under `finetune_output/<run-name>/`.
+- On a GPU machine, make sure CUDA-enabled `torch` is installed in the `tts` env.
+
+### Test a finetuned checkpoint
+
+```bash
+python test_finetuned.py \
+  --checkpoint finetune_output/<run-name>/best_model.pth \
+  --config finetune_output/<run-name>/config.json \
+  --text "This is a finetuned voice test" \
+  --output finetuned_test.wav
+```
+
+Play result on macOS:
+
+```bash
+afplay finetuned_test.wav
+```
+
 ## Optional: activate environment and run normally
 
 ```bash
