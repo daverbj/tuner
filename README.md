@@ -5,25 +5,46 @@ This directory contains a simple inference script:
 - `infer_tts.py` (runs text-to-speech using Coqui TTS)
 - `youtube_dataset_builder.py` (downloads YouTube video, detects speech with Silero VAD, transcribes with faster-whisper)
 
+## Quickstart (fresh clone)
+
+```bash
+git clone <your-repo-url>
+cd tuner
+conda create -y -n tts python=3.10
+conda activate tts
+git clone https://github.com/coqui-ai/TTS.git
+pip install -e ./TTS
+pip install yt-dlp faster-whisper scipy soundfile
+python infer_tts.py --text "Hello from Coqui TTS" --out_path output.wav
+```
+
+macOS system dependency:
+
+```bash
+brew install ffmpeg
+```
+
 ## 1) Create and prepare Conda environment
 
 ```bash
 conda create -y -n tts python=3.10
-conda run -n tts pip install -e /Users/d.banerjee/Documents/development/tuner/TTS
+conda activate tts
+git clone https://github.com/coqui-ai/TTS.git
+pip install -e ./TTS
 ```
 
 ## 2) Run the script
 
 ```bash
-conda run -n tts python /Users/d.banerjee/Documents/development/tuner/infer_tts.py --help
+python infer_tts.py --help
 ```
 
 ## 3) Generate speech (quick test)
 
 ```bash
-conda run -n tts python /Users/d.banerjee/Documents/development/tuner/infer_tts.py \
+python infer_tts.py \
   --text "Hello from Coqui TTS" \
-  --out_path /Users/d.banerjee/Documents/development/tuner/output.wav \
+  --out_path output.wav \
   --model_name tts_models/en/ljspeech/glow-tts
 ```
 
@@ -32,7 +53,7 @@ The first run downloads model files, so it can take a while.
 ## 4) Play output audio (macOS)
 
 ```bash
-afplay /Users/d.banerjee/Documents/development/tuner/output.wav
+afplay output.wav
 ```
 
 ## Build a finetuning dataset from YouTube (Silero VAD + Whisper)
@@ -48,9 +69,9 @@ Also make sure `ffmpeg` and `ffprobe` are installed and available in your PATH.
 ### Run dataset builder
 
 ```bash
-conda run -n tts python /Users/d.banerjee/Documents/development/tuner/youtube_dataset_builder.py \
+python youtube_dataset_builder.py \
   "https://www.youtube.com/watch?v=VIDEO_ID" \
-  --output_dir /Users/d.banerjee/Documents/development/tuner/dataset_output \
+  --output_dir dataset_output \
   --language en \
   --whisper_model small
 ```
@@ -78,7 +99,7 @@ conda run -n tts python /Users/d.banerjee/Documents/development/tuner/youtube_da
 
 ```bash
 conda activate tts
-python /Users/d.banerjee/Documents/development/tuner/infer_tts.py --text "Test" --out_path output.wav
+python infer_tts.py --text "Test" --out_path output.wav
 ```
 
 ## Common options
@@ -96,7 +117,7 @@ python /Users/d.banerjee/Documents/development/tuner/infer_tts.py --text "Test" 
 - If you see missing package errors, reinstall in env:
 
 ```bash
-conda run -n tts pip install -e /Users/d.banerjee/Documents/development/tuner/TTS
+pip install -e ./TTS
 ```
 
 - If Conda is not found, initialize shell first:
