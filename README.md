@@ -124,6 +124,47 @@ afplay output.wav
 
 ---
 
+## Cloning vs Fine-Tuning
+
+XTTS v2 supports two approaches. Choosing between them depends on your data, quality requirements, and timeline.
+
+### Voice Cloning (Zero-Shot)
+
+Cloning uses only a short reference audio clip to condition the model — no training required.
+
+**Use when:**
+- You only have a few seconds of audio (3–10 seconds is enough).
+- You need to prototype quickly or test many voices without waiting for training.
+- You're building simple, short-form use cases (notifications, demos) where 85–95% voice similarity is acceptable.
+- You want one speaker to immediately "speak" any of the 17 XTTS-supported languages.
+- You want to avoid GPU costs and training time entirely.
+
+### Fine-Tuning
+
+Fine-tuning adapts the base model weights to a specific speaker, producing higher-fidelity, more consistent output.
+
+**Use when:**
+- You need output nearly indistinguishable from the target voice, including unique accents, quirks, and emotions.
+- You are generating long-form content (audiobooks, podcasts) where cloning artifacts or pacing inconsistencies would be noticeable.
+- You have at least 30–45 minutes of clean, high-quality recordings.
+- You need the model to reliably pronounce custom vocabulary, industry terms, or rare words.
+- You want a specific speaking style: whispering, aggressive delivery, stylised persona, etc.
+
+### Summary
+
+| Requirement | Cloning | Fine-Tuning |
+|---|:---:|:---:|
+| Start in seconds | ✅ | ❌ |
+| Near-perfect voice match | ❌ | ✅ |
+| Only 6 seconds of audio | ✅ | ❌ |
+| Stable long-form narration | ❌ | ✅ |
+| Unique accent / vocal quirks | ❌ | ✅ |
+| No GPU / low budget | ✅ | ❌ |
+
+> **Rule of thumb:** use cloning to prototype and validate the voice; switch to fine-tuning when you need production quality.
+
+---
+
 ## Notes
 
 - Audio chunks are split on natural speech pauses via Silero VAD, not arbitrary timestamps.
