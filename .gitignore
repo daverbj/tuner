@@ -5,25 +5,14 @@ __pycache__/
 *.so
 .Python
 build/
-develop-eggs/
 dist/
 downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
+pip-wheel-metadata/
 
-# Virtual Environments
+# Virtual environments
 venv/
 env/
 ENV/
@@ -31,53 +20,31 @@ env.bak/
 venv.bak/
 .conda/
 
-# TTS Repository (cloned dependency)
+# Local dependency clone
 TTS/
 
-# Datasets (large files and potentially copyrighted)
-dataset*/
-*.mp4
-*.webm
-*.mkv
-*.avi
-
-# Training outputs (large model checkpoints)
+# XTTS generated datasets and training outputs
+xtts_dataset*/
+xtts_runs/
 finetune_output/
 checkpoints/
 runs/
 logs/
 
-# Generated audio files
+# Large media/source artifacts
+*.mp4
+*.webm
+*.mkv
+*.avi
+*.mov
+
+# Generated audio
 *.wav
 *.mp3
 *.flac
 *.ogg
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.project
-.pydevproject
-.spyderproject
-.spyproject
-.ropeproject
-
-# OS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Environment variables and secrets
+# Secrets and env files
 .env
 .env.local
 *.key
@@ -85,15 +52,26 @@ Thumbs.db
 credentials.json
 secrets.json
 
-# Logs
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Notebook
+.ipynb_checkpoints
+
+# Logs and temp files
 *.log
 *.out
 *.err
-
-# Temporary files
 tmp/
 temp/
 *.tmp
 *.bak
-*.swp
-*.cache
