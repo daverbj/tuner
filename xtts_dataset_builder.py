@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import random
 import shutil
 import subprocess
@@ -27,15 +28,28 @@ from typing import Iterable
 from urllib.parse import urlparse
 
 
+def _resolve_bin(name: str) -> str:
+    """Return the absolute path to a binary, preferring the current Python env's bin dir."""
+    env_bin = str(Path(sys.executable).parent)
+    env_path = env_bin + os.pathsep + os.environ.get("PATH", "")
+    resolved = shutil.which(name, path=env_path)
+    if resolved:
+        return resolved
+    raise FileNotFoundError(
+        f"'{name}' not found. Install it in your Python environment: pip install {name}"
+    )
+
+
 def is_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def run_command(command: list[str], description: str) -> None:
+    resolved_command = [_resolve_bin(command[0])] + command[1:]
     print(f"\n[RUN] {description}")
-    print(" ".join(command))
-    subprocess.run(command, check=True)
+    print(" ".join(resolved_command))
+    subprocess.run(resolved_command, check=True)
 
 
 def download_source(input_source: str, source_dir: Path) -> Path:
@@ -130,6 +144,58 @@ def normalize_text(text: str) -> str:
     return text
 
 
+def _silero_pause_chunks(
+    full_audio: Path,
+    buffer_seconds: float,
+    min_duration: float,
+    max_duration: float,
+    vad_sample_rate: int,
+    vad_min_silence_ms: int,
+    vad_min_speech_ms: int,
+) -> list[tuple[float, float]]:
+    from silero_vad import get_speech_timestamps, load_silero_vad, read_audio
+
+    print(
+        "[INFO] Detecting pause-based chunks with Silero VAD "
+        f"(sr={vad_sample_rate}, min_silence_ms={vad_min_silence_ms}, min_speech_ms={vad_min_speech_ms})"
+    )
+    model = load_silero_vad()
+    audio = read_audio(str(full_audio), sampling_rate=vad_sample_rate)
+    speech_timestamps = get_speech_timestamps(
+        audio,
+        model,
+        sampling_rate=vad_sample_rate,
+        min_silence_duration_ms=vad_min_silence_ms,
+        min_speech_duration_ms=vad_min_speech_ms,
+    )
+
+    chunks: list[tuple[float, float]] = []
+    for timestamp in speech_timestamps:
+        start = max((timestamp["start"] / vad_sample_rate) - buffer_seconds, 0.0)
+        end = (timestamp["end"] / vad_sample_rate) + buffer_seconds
+        duration = end - start
+
+        if duration < min_duration:
+            continue
+
+        if duration <= max_duration:
+            chunks.append((start, end))
+            continue
+
+        cursor = start
+        while cursor < end:
+            window_end = min(cursor + max_duration, end)
+            if (window_end - cursor) >= min_duration:
+                chunks.append((cursor, window_end))
+            cursor = window_end
+
+    if not chunks:
+        raise RuntimeError("Silero VAD did not detect usable speech chunks.")
+
+    print(f"[INFO] Silero produced {len(chunks)} pause-based chunks")
+    return chunks
+
+
 def build_segments(
     full_audio: Path,
     output_dir: Path,
@@ -142,6 +208,9 @@ def build_segments(
     eval_split: float,
     sample_rate: int,
     compute_type: str,
+    vad_sample_rate: int,
+    vad_min_silence_ms: int,
+    vad_min_speech_ms: int,
 ) -> tuple[Path, Path, Path]:
     from faster_whisper import WhisperModel
 
@@ -163,57 +232,44 @@ def build_segments(
     print(f"\n[INFO] Loading Whisper model '{whisper_model_name}' on {device} ({compute_type})")
     model = WhisperModel(whisper_model_name, device=device, compute_type=compute_type)
 
-    print("[INFO] Transcribing source audio with word timestamps")
-    segments, _ = model.transcribe(str(full_audio), word_timestamps=True, language=language, vad_filter=True)
-    segments = list(segments)
-
-    words = []
-    for segment in segments:
-        words.extend(list(segment.words or []))
-
-    if not words:
-        raise RuntimeError("No words were produced by Whisper. Try another source or larger whisper model.")
+    chunks = _silero_pause_chunks(
+        full_audio=full_audio,
+        buffer_seconds=buffer_seconds,
+        min_duration=min_duration,
+        max_duration=max_duration,
+        vad_sample_rate=vad_sample_rate,
+        vad_min_silence_ms=vad_min_silence_ms,
+        vad_min_speech_ms=vad_min_speech_ms,
+    )
 
     metadata_rows: list[dict[str, str]] = []
-    sentence = ""
-    sentence_start = None
     sentence_index = 0
 
-    for idx, word in enumerate(words):
-        token = word.word or ""
-        if sentence_start is None:
-            if idx == 0:
-                sentence_start = max(float(word.start) - buffer_seconds, 0.0)
-            else:
-                previous_end = float(words[idx - 1].end)
-                sentence_start = max(float(word.start) - buffer_seconds, (previous_end + float(word.start)) / 2.0)
-            sentence = token
-        else:
-            sentence += token
+    for start_time, end_time in chunks:
+        duration = end_time - start_time
+        if not (min_duration <= duration <= max_duration):
+            continue
 
-        if token.strip().endswith((".", "!", "?")):
-            sentence_text = normalize_text(sentence)
-            next_word_start = float(words[idx + 1].start) if idx + 1 < len(words) else float(word.end)
-            sentence_end = min((float(word.end) + next_word_start) / 2.0, float(word.end) + buffer_seconds)
-            duration = sentence_end - sentence_start
+        filename = f"segment_{sentence_index:06d}.wav"
+        relative_audio_path = Path("wavs") / filename
+        output_audio = output_dir / relative_audio_path
+        cut_audio_segment(full_audio, output_audio, start_time, end_time, sample_rate)
 
-            if sentence_text and min_duration <= duration <= max_duration:
-                filename = f"segment_{sentence_index:06d}.wav"
-                relative_audio_path = Path("wavs") / filename
-                output_audio = output_dir / relative_audio_path
-                cut_audio_segment(full_audio, output_audio, sentence_start, sentence_end, sample_rate)
-                metadata_rows.append(
-                    {
-                        "audio_file": relative_audio_path.as_posix(),
-                        "text": sentence_text,
-                        "speaker_name": speaker_name,
-                        "duration": f"{duration:.3f}",
-                    }
-                )
-                sentence_index += 1
+        segments, _ = model.transcribe(str(output_audio), language=language, vad_filter=False)
+        text = normalize_text(" ".join(seg.text for seg in segments))
+        if not text:
+            output_audio.unlink(missing_ok=True)
+            continue
 
-            sentence = ""
-            sentence_start = None
+        metadata_rows.append(
+            {
+                "audio_file": relative_audio_path.as_posix(),
+                "text": text,
+                "speaker_name": speaker_name,
+                "duration": f"{duration:.3f}",
+            }
+        )
+        sentence_index += 1
 
     if len(metadata_rows) < 10:
         raise RuntimeError(f"Only {len(metadata_rows)} usable segments were created. Need more data for XTTS fine-tuning.")
@@ -267,6 +323,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--buffer_seconds", type=float, default=0.20, help="Padding around sentence boundaries.")
     parser.add_argument("--min_duration", type=float, default=0.5, help="Minimum segment duration in seconds.")
     parser.add_argument("--max_duration", type=float, default=11.0, help="Maximum segment duration in seconds.")
+    parser.add_argument("--vad_sample_rate", type=int, default=16000, help="Sample rate used by Silero VAD.")
+    parser.add_argument("--vad_min_silence_ms", type=int, default=450, help="Pause threshold for Silero chunk split.")
+    parser.add_argument("--vad_min_speech_ms", type=int, default=250, help="Minimum speech length considered by Silero VAD.")
     parser.add_argument("--eval_split", type=float, default=0.15, help="Fraction of samples reserved for eval.")
     parser.add_argument("--seed", type=int, default=1337, help="Random seed for train/eval split.")
     parser.add_argument("--start_minutes", type=float, default=0.0, help="Start processing from this minute offset.")
@@ -275,18 +334,36 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
-    random.seed(args.seed)
+def build_xtts_dataset(
+    input_source: str,
+    output_dir: str = "xtts_dataset",
+    language: str = "en",
+    speaker_name: str = "speaker",
+    whisper_model: str = "small",
+    compute_type: str = "float16",
+    sample_rate: int = 22050,
+    buffer_seconds: float = 0.20,
+    min_duration: float = 0.5,
+    max_duration: float = 11.0,
+    eval_split: float = 0.15,
+    seed: int = 1337,
+    start_minutes: float = 0.0,
+    duration_minutes: float | None = None,
+    end_minutes: float | None = None,
+    vad_sample_rate: int = 16000,
+    vad_min_silence_ms: int = 450,
+    vad_min_speech_ms: int = 250,
+) -> tuple[Path, Path, Path]:
+    random.seed(seed)
 
-    output_dir = Path(args.output_dir).expanduser().resolve()
-    source_dir = output_dir / "source"
-    artifacts_dir = output_dir / "artifacts"
+    output_path = Path(output_dir).expanduser().resolve()
+    source_dir = output_path / "source"
+    artifacts_dir = output_path / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    start_seconds = args.start_minutes * 60.0
-    duration_seconds = args.duration_minutes * 60.0 if args.duration_minutes is not None else None
-    end_seconds = args.end_minutes * 60.0 if args.end_minutes is not None else None
+    start_seconds = start_minutes * 60.0
+    duration_seconds = duration_minutes * 60.0 if duration_minutes is not None else None
+    end_seconds = end_minutes * 60.0 if end_minutes is not None else None
 
     if start_seconds < 0:
         raise ValueError("--start_minutes must be >= 0")
@@ -299,42 +376,70 @@ def main() -> None:
     if end_seconds is not None and end_seconds <= start_seconds:
         raise ValueError("--end_minutes must be greater than --start_minutes")
 
-    source_media = download_source(args.input_source, source_dir)
+    source_media = download_source(input_source, source_dir)
     full_audio = artifacts_dir / "full_audio.wav"
     extract_audio(
         source_media,
         full_audio,
-        sample_rate=args.sample_rate,
+        sample_rate=sample_rate,
         start_seconds=start_seconds,
         duration_seconds=duration_seconds,
         end_seconds=end_seconds,
     )
 
     if duration_seconds is not None:
-        print(f"[INFO] Processing source window: start={args.start_minutes:.2f} min, duration={args.duration_minutes:.2f} min")
+        print(f"[INFO] Processing source window: start={start_minutes:.2f} min, duration={duration_minutes:.2f} min")
     elif end_seconds is not None:
-        print(f"[INFO] Processing source window: start={args.start_minutes:.2f} min, end={args.end_minutes:.2f} min")
+        print(f"[INFO] Processing source window: start={start_minutes:.2f} min, end={end_minutes:.2f} min")
     elif start_seconds > 0:
-        print(f"[INFO] Processing source starting from minute {args.start_minutes:.2f}")
+        print(f"[INFO] Processing source starting from minute {start_minutes:.2f}")
 
     train_csv, eval_csv, speaker_reference = build_segments(
         full_audio=full_audio,
-        output_dir=output_dir,
-        language=args.language,
-        whisper_model_name=args.whisper_model,
-        speaker_name=args.speaker_name,
-        buffer_seconds=args.buffer_seconds,
-        min_duration=args.min_duration,
-        max_duration=args.max_duration,
-        eval_split=args.eval_split,
-        sample_rate=args.sample_rate,
-        compute_type=args.compute_type,
+        output_dir=output_path,
+        language=language,
+        whisper_model_name=whisper_model,
+        speaker_name=speaker_name,
+        buffer_seconds=buffer_seconds,
+        min_duration=min_duration,
+        max_duration=max_duration,
+        eval_split=eval_split,
+        sample_rate=sample_rate,
+        compute_type=compute_type,
+        vad_sample_rate=vad_sample_rate,
+        vad_min_silence_ms=vad_min_silence_ms,
+        vad_min_speech_ms=vad_min_speech_ms,
     )
 
     print("\n[OK] XTTS dataset ready")
     print(f"[OK] Train metadata: {train_csv}")
     print(f"[OK] Eval metadata:  {eval_csv}")
     print(f"[OK] Reference audio: {speaker_reference}")
+    return train_csv, eval_csv, speaker_reference
+
+
+def main() -> None:
+    args = parse_args()
+    build_xtts_dataset(
+        input_source=args.input_source,
+        output_dir=args.output_dir,
+        language=args.language,
+        speaker_name=args.speaker_name,
+        whisper_model=args.whisper_model,
+        compute_type=args.compute_type,
+        sample_rate=args.sample_rate,
+        buffer_seconds=args.buffer_seconds,
+        min_duration=args.min_duration,
+        max_duration=args.max_duration,
+        eval_split=args.eval_split,
+        seed=args.seed,
+        start_minutes=args.start_minutes,
+        duration_minutes=args.duration_minutes,
+        end_minutes=args.end_minutes,
+        vad_sample_rate=args.vad_sample_rate,
+        vad_min_silence_ms=args.vad_min_silence_ms,
+        vad_min_speech_ms=args.vad_min_speech_ms,
+    )
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ TTS/
 # XTTS generated datasets and training outputs
 xtts_dataset*/
 xtts_runs/
+xtts_infer_outputs/
 finetune_output/
 checkpoints/
 runs/
@@ -38,7 +39,7 @@ logs/
 *.avi
 *.mov
 
-# Generated audio
+# Generated audio (top-level only; client/public WAVs are fine)
 *.wav
 *.mp3
 *.flac
@@ -75,3 +76,10 @@ tmp/
 temp/
 *.tmp
 *.bak
+
+# Next.js / Node client build artifacts
+client/.next/
+client/out/
+client/node_modules/
+client/.turbo/
+client/coverage/

@@ -36,8 +36,20 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
+def run_xtts_finetune(
+    dataset_dir: str,
+    language: str = "en",
+    output_dir: str = "xtts_runs",
+    run_name: str = "xtts_v2_ft",
+    epochs: int = 10,
+    batch_size: int = 2,
+    grad_accum: int = 8,
+    max_audio_seconds: float = 11.0,
+    num_loader_workers: int = 4,
+    eval_split_max_size: int = 256,
+    learning_rate: float = 5e-6,
+    print_step: int = 10,
+) -> dict:
     from trainer import Trainer, TrainerArgs
 
     from TTS.config.shared_configs import BaseDatasetConfig
@@ -58,8 +70,8 @@ def main() -> None:
     xtts_model_module.load_fsspec = trusted_load_fsspec
     gpt_trainer_module.load_fsspec = trusted_load_fsspec
 
-    dataset_dir = Path(args.dataset_dir).expanduser().resolve()
-    output_dir = Path(args.output_dir).expanduser().resolve()
+    dataset_dir = Path(dataset_dir).expanduser().resolve()
+    output_dir = Path(output_dir).expanduser().resolve()
 
     train_csv = dataset_dir / "metadata_train.csv"
     eval_csv = dataset_dir / "metadata_eval.csv"
@@ -71,7 +83,7 @@ def main() -> None:
     if not eval_csv.exists():
         raise FileNotFoundError(f"Eval metadata not found: {eval_csv}")
 
-    run_output = output_dir / args.run_name
+    run_output = output_dir / run_name
     checkpoints_dir = run_output / "xtts_v2_base"
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
@@ -79,7 +91,7 @@ def main() -> None:
     print(f"Train CSV:     {train_csv}")
     print(f"Eval CSV:      {eval_csv}")
     print(f"Output dir:    {run_output}")
-    print(f"Language:      {args.language}")
+    print(f"Language:      {language}")
 
     dvae_link = "https://coqui.gateway.scarf.sh/hf-coqui/XTTS-v2/main/dvae.pth"
     mel_link = "https://coqui.gateway.scarf.sh/hf-coqui/XTTS-v2/main/mel_stats.pth"
@@ -108,14 +120,14 @@ def main() -> None:
         path=str(dataset_dir),
         meta_file_train=train_csv.name,
         meta_file_val=eval_csv.name,
-        language=args.language,
+        language=language,
     )
 
     model_args = GPTArgs(
         max_conditioning_length=132300,
         min_conditioning_length=66150,
         debug_loading_failures=False,
-        max_wav_length=int(args.max_audio_seconds * 22050),
+        max_wav_length=int(max_audio_seconds * 22050),
         max_text_length=200,
         mel_norm_file=str(mel_stats),
         dvae_checkpoint=str(dvae_checkpoint),
@@ -131,21 +143,21 @@ def main() -> None:
     audio_config = XttsAudioConfig(sample_rate=22050, dvae_sample_rate=22050, output_sample_rate=24000)
 
     config = GPTTrainerConfig(
-        epochs=args.epochs,
+        epochs=epochs,
         output_path=str(run_output),
         model_args=model_args,
-        run_name=args.run_name,
+        run_name=run_name,
         project_name="XTTS_trainer",
         run_description="Standalone XTTS fine-tuning run",
         dashboard_logger="tensorboard",
         logger_uri=None,
         audio=audio_config,
-        batch_size=args.batch_size,
+        batch_size=batch_size,
         batch_group_size=48,
-        eval_batch_size=args.batch_size,
-        num_loader_workers=args.num_loader_workers,
-        eval_split_max_size=args.eval_split_max_size,
-        print_step=args.print_step,
+        eval_batch_size=batch_size,
+        num_loader_workers=num_loader_workers,
+        eval_split_max_size=eval_split_max_size,
+        print_step=print_step,
         plot_step=100,
         log_model_step=100,
         save_step=1000,
@@ -155,7 +167,7 @@ def main() -> None:
         optimizer="AdamW",
         optimizer_wd_only_on_weights=True,
         optimizer_params={"betas": [0.9, 0.96], "eps": 1e-8, "weight_decay": 1e-2},
-        lr=args.learning_rate,
+        lr=learning_rate,
         lr_scheduler="MultiStepLR",
         lr_scheduler_params={"milestones": [50000 * 18, 150000 * 18, 300000 * 18], "gamma": 0.5, "last_epoch": -1},
         test_sentences=[],
@@ -182,7 +194,7 @@ def main() -> None:
             restore_path=None,
             skip_train_epoch=False,
             start_with_eval=False,
-            grad_accum_steps=args.grad_accum,
+            grad_accum_steps=grad_accum,
         ),
         config,
         output_path=str(run_output),
@@ -205,6 +217,31 @@ def main() -> None:
 
     del model, trainer, train_samples, eval_samples
     gc.collect()
+
+    return {
+        "run_output": str(run_output),
+        "xtts_config": str(xtts_config_file),
+        "xtts_vocab": str(vocab_file),
+        "speaker_reference": speaker_reference,
+    }
+
+
+def main() -> None:
+    args = parse_args()
+    run_xtts_finetune(
+        dataset_dir=args.dataset_dir,
+        language=args.language,
+        output_dir=args.output_dir,
+        run_name=args.run_name,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        grad_accum=args.grad_accum,
+        max_audio_seconds=args.max_audio_seconds,
+        num_loader_workers=args.num_loader_workers,
+        eval_split_max_size=args.eval_split_max_size,
+        learning_rate=args.learning_rate,
+        print_step=args.print_step,
+    )
 
 
 if __name__ == "__main__":
